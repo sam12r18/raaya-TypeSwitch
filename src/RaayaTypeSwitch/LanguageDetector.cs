@@ -8,7 +8,8 @@ internal sealed class LanguageDetector
     {
         "سلام","خوب","خوبی","من","تو","ما","شما","این","اون","آن","یک","برای","با","از","به",
         "در","که","چی","چرا","بله","نه","ممنون","مرسی","لطفا","لطفاً","امروز","فردا","کار",
-        "برنامه","پروژه","سایت","کتاب","متن","فارسی","انگلیسی","درست","مشکل","شروع","ادامه"
+        "برنامه","پروژه","سایت","کتاب","متن","فارسی","انگلیسی","درست","مشکل","شروع","ادامه",
+        "مثلا","مثلاً","میشه","می‌شه","میتونه","می‌تونه","میخوام","می‌خوام","میخواستم","می‌خواستم"
     };
 
     private static readonly HashSet<string> CommonEnglish = new(StringComparer.OrdinalIgnoreCase)
@@ -22,7 +23,7 @@ internal sealed class LanguageDetector
     private static readonly string[] PersianCommonChunks =
     {
         "سلام","است","بود","های","می","ان","ار","را","به","در","از","بر","ام","ات","ند","ری",
-        "ها","تر","کن","ور","ید","ای","یا","وا","رو","نا","هم"
+        "ها","تر","کن","ور","ید","ای","یا","وا","رو","نا","هم","مث","لا","شه","خو","تو","نه"
     };
 
     private static readonly string[] EnglishCommonChunks =
@@ -36,29 +37,106 @@ internal sealed class LanguageDetector
         if (string.IsNullOrWhiteSpace(currentText) || string.IsNullOrWhiteSpace(alternateText))
             return DetectionResult.None;
 
+        currentText = currentText.Trim();
+        alternateText = alternateText.Trim();
+
         var currentScore = Score(currentText, currentLanguage);
         var alternateLanguage = currentLanguage == LanguageKind.Persian
             ? LanguageKind.English
             : LanguageKind.Persian;
         var alternateScore = Score(alternateText, alternateLanguage);
 
-        var margin = alternateScore - currentScore;
+        var currentKnown = IsKnownWord(currentText, currentLanguage);
+        var alternateKnown = IsKnownWord(alternateText, alternateLanguage);
 
-        // Unknown but structurally plausible words (brands, technical terms, names)
-        // must still be correctable without requiring an exhaustive dictionary.
-        var shouldCorrect =
-            alternateScore >= 6.0 &&
-            margin >= 3.5 &&
-            alternateText.Length >= 2;
+        // Never "correct" a word that we already know to be valid in the
+        // currently active language. This is a strong false-positive guard.
+        if (currentKnown)
+        {
+            return new DetectionResult(
+                false,
+                currentLanguage,
+                currentText,
+                alternateText,
+                currentScore,
+                alternateScore);
+        }
+
+        var margin = alternateScore - currentScore;
+        var shouldCorrect = ShouldCorrect(
+            currentText,
+            alternateText,
+            currentLanguage,
+            alternateLanguage,
+            currentScore,
+            alternateScore,
+            margin,
+            alternateKnown);
 
         return shouldCorrect
             ? new DetectionResult(true, alternateLanguage, currentText, alternateText, currentScore, alternateScore)
             : new DetectionResult(false, currentLanguage, currentText, alternateText, currentScore, alternateScore);
     }
 
+    private static bool ShouldCorrect(
+        string currentText,
+        string alternateText,
+        LanguageKind currentLanguage,
+        LanguageKind alternateLanguage,
+        double currentScore,
+        double alternateScore,
+        double margin,
+        bool alternateKnown)
+    {
+        if (alternateText.Length < 2)
+            return false;
+
+        // A known target word is strong evidence. It still needs a margin so
+        // common words in the current language are not rewritten accidentally.
+        if (alternateKnown)
+            return alternateScore >= 7.0 && margin >= 2.5;
+
+        if (currentLanguage == LanguageKind.Persian &&
+            alternateLanguage == LanguageKind.English)
+        {
+            // Unknown short English-looking strings are a major source of
+            // false positives: e.g. "مثلا" mapped to "legh".
+            if (currentText.Length <= 4)
+                return false;
+
+            // For an unknown English target, the current Persian token must
+            // itself look suspicious, not merely have a lower score.
+            if (!LooksSuspiciousPersian(currentText))
+                return false;
+
+            return alternateScore >= 6.5 && margin >= 4.0;
+        }
+
+        if (currentLanguage == LanguageKind.English &&
+            alternateLanguage == LanguageKind.Persian)
+        {
+            // If the current English token is structurally plausible, do not
+            // convert it to an unknown Persian word. Known Persian words are
+            // handled by the stronger branch above.
+            if (LooksLikePlausibleEnglishWord(currentText.ToLowerInvariant()))
+                return false;
+
+            return alternateScore >= 6.5 && margin >= 4.0;
+        }
+
+        return alternateScore >= 7.0 && margin >= 4.0;
+    }
+
+    private static bool IsKnownWord(string text, LanguageKind language) =>
+        language switch
+        {
+            LanguageKind.Persian => CommonPersian.Contains(text),
+            LanguageKind.English => CommonEnglish.Contains(text),
+            _ => false
+        };
+
     private static double Score(string text, LanguageKind language)
     {
-        text = text.Trim();
         if (text.Length == 0)
             return 0;
 
@@ -80,21 +158,12 @@ internal sealed class LanguageDetector
         if (CommonPersian.Contains(text))
             score += 8;
 
-        var chunkHits = 0;
-        foreach (var part in PersianCommonChunks)
-        {
-            if (text.Contains(part, StringComparison.Ordinal))
-            {
-                score += 0.7;
-                chunkHits++;
-            }
-        }
+        var chunkHits = CountPersianChunkHits(text);
+        score += chunkHits * 0.7;
 
         if (Regex.IsMatch(text, "[A-Za-z]"))
             score -= 3;
 
-        // Long Persian-looking strings with no familiar Persian structure are
-        // often the result of typing an English word while Persian is active.
         if (text.Length >= 4 &&
             persianChars == text.Length &&
             !CommonPersian.Contains(text) &&
@@ -137,12 +206,51 @@ internal sealed class LanguageDetector
         if (LooksLikePlausibleEnglishWord(lower))
             score += 2.5;
 
-        // A few matching English chunks provide additional confidence for
-        // unknown words without turning the dictionary into a hard dependency.
         if (chunkHits >= 2)
             score += Math.Min(1.5, chunkHits * 0.25);
 
         return score;
+    }
+
+    private static bool LooksSuspiciousPersian(string text)
+    {
+        if (text.Length < 5)
+            return false;
+
+        if (!text.All(IsPersianChar))
+            return false;
+
+        // A Persian word with familiar Persian chunks is treated as plausible
+        // and therefore protected from speculative conversion.
+        if (CountPersianChunkHits(text) > 0)
+            return false;
+
+        // Repeated unusual letters are useful evidence for a wrong layout
+        // (e.g. قششغش -> raaya), but not required.
+        var repeatedAdjacent = false;
+        for (var i = 1; i < text.Length; i++)
+        {
+            if (text[i] == text[i - 1])
+            {
+                repeatedAdjacent = true;
+                break;
+            }
+        }
+
+        return repeatedAdjacent || text.Length >= 5;
+    }
+
+    private static int CountPersianChunkHits(string text)
+    {
+        var hits = 0;
+
+        foreach (var part in PersianCommonChunks)
+        {
+            if (text.Contains(part, StringComparison.Ordinal))
+                hits++;
+        }
+
+        return hits;
     }
 
     private static bool LooksLikePlausibleEnglishWord(string text)
@@ -156,8 +264,6 @@ internal sealed class LanguageDetector
         if (!text.Any(IsEnglishVowel))
             return false;
 
-        // Reject highly implausible consonant runs. Y is treated as a vowel
-        // for this lightweight heuristic because it is common in names/brands.
         var longestConsonantRun = 0;
         var currentRun = 0;
 
