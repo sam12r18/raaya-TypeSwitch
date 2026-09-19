@@ -2,7 +2,7 @@ name: build
 
 on:
   push:
-    branches: ["main"]
+    branches: ["main", "test/**", "feat/**", "fix/**"]
   pull_request:
     branches: ["main"]
 
@@ -27,3 +27,6 @@ jobs:
 
       - name: Build
         run: dotnet build RaayaTypeSwitch.slnx --configuration Release --no-restore
+
+      - name: Test
+        run: dotnet test RaayaTypeSwitch.slnx --configuration Release --no-build
