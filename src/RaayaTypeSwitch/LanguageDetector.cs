@@ -9,7 +9,8 @@ internal sealed class LanguageDetector
         "سلام","خوب","خوبی","من","تو","ما","شما","این","اون","آن","یک","برای","با","از","به",
         "در","که","چی","چرا","بله","نه","ممنون","مرسی","لطفا","لطفاً","امروز","فردا","کار",
         "برنامه","پروژه","سایت","کتاب","متن","فارسی","انگلیسی","درست","مشکل","شروع","ادامه",
-        "مثلا","مثلاً","میشه","می‌شه","میتونه","می‌تونه","میخوام","می‌خوام","میخواستم","می‌خواستم"
+        "مثلا","مثلاً","میشه","می‌شه","میتونه","می‌تونه","میخوام","می‌خوام","میخواستم","می‌خواستم",
+        "اضافه","اضافه‌کردن","اضافه کردن","حذف","تغییر","ویرایش","جدید","قبلی","بعدی"
     };
 
     private static readonly HashSet<string> CommonEnglish = new(StringComparer.OrdinalIgnoreCase)
@@ -109,6 +110,9 @@ internal sealed class LanguageDetector
             if (!LooksSuspiciousPersian(currentText))
                 return false;
 
+            if (CountEnglishChunkHits(alternateText.ToLowerInvariant()) < 2)
+                return false;
+
             return alternateScore >= 6.5 && margin >= 4.0;
         }
 
@@ -186,16 +190,8 @@ internal sealed class LanguageDetector
             score += 8;
 
         var lower = text.ToLowerInvariant();
-        var chunkHits = 0;
-
-        foreach (var part in EnglishCommonChunks)
-        {
-            if (lower.Contains(part, StringComparison.Ordinal))
-            {
-                score += 0.45;
-                chunkHits++;
-            }
-        }
+        var chunkHits = CountEnglishChunkHits(lower);
+        score += chunkHits * 0.45;
 
         if (Regex.IsMatch(text, @"[\u0600-\u06FF]"))
             score -= 3;
@@ -245,6 +241,19 @@ internal sealed class LanguageDetector
         var hits = 0;
 
         foreach (var part in PersianCommonChunks)
+        {
+            if (text.Contains(part, StringComparison.Ordinal))
+                hits++;
+        }
+
+        return hits;
+    }
+
+    private static int CountEnglishChunkHits(string text)
+    {
+        var hits = 0;
+
+        foreach (var part in EnglishCommonChunks)
         {
             if (text.Contains(part, StringComparison.Ordinal))
                 hits++;
