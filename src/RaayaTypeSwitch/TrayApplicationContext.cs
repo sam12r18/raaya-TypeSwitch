@@ -27,9 +27,13 @@ internal sealed class TrayApplicationContext : ApplicationContext
         enabled.CheckedChanged += (_, _) =>
         {
             _engine.Enabled = enabled.Checked;
-            _tray.Text = enabled.Checked
-                ? "Raaya TypeSwitch - فعال"
-                : "Raaya TypeSwitch - غیرفعال";
+
+            if (_tray is not null)
+            {
+                _tray.Text = enabled.Checked
+                    ? "Raaya TypeSwitch - فعال"
+                    : "Raaya TypeSwitch - غیرفعال";
+            }
         };
 
         var openLog = new ToolStripMenuItem("باز کردن لاگ");
