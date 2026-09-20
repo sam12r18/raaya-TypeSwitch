@@ -1,5 +1,7 @@
 # Raaya TypeSwitch
 
+**English** | [فارسی](README.fa.md)
+
 **Smart Persian ↔ English keyboard-layout correction for Windows.**
 
 Raaya TypeSwitch is a lightweight, local-first Windows utility that detects text typed with the wrong keyboard layout, fixes the already typed word, and switches the active keyboard layout automatically.
