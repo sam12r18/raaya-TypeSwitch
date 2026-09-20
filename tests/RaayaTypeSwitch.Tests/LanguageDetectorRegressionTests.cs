@@ -12,6 +12,7 @@ public sealed class LanguageDetectorRegressionTests
     [InlineData("سلام", "sghl")]
     [InlineData("میخوام", "ldoh,l")]
     [InlineData("ممنون", "lkl,k")]
+    [InlineData("اضافه", "hghti")]
     public void ValidPersianWords_AreNotConvertedToEnglish(string current, string alternate)
     {
         var result = _detector.Detect(current, alternate, LanguageKind.Persian);
