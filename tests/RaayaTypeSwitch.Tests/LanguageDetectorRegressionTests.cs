@@ -1,3 +1,5 @@
+using Xunit;
+
 namespace RaayaTypeSwitch.Tests;
 
 public sealed class LanguageDetectorRegressionTests
@@ -61,13 +63,17 @@ public sealed class LanguageDetectorRegressionTests
     }
 
     [Theory]
-    [InlineData("a", "ش", LanguageKind.English)]
-    [InlineData("ب", "f", LanguageKind.Persian)]
+    [InlineData("a", "ش", true)]
+    [InlineData("ب", "f", false)]
     public void SingleCharacterInput_IsNeverAutoCorrected(
         string current,
         string alternate,
-        LanguageKind language)
+        bool currentIsEnglish)
     {
+        var language = currentIsEnglish
+            ? LanguageKind.English
+            : LanguageKind.Persian;
+
         var result = _detector.Detect(current, alternate, language);
 
         Assert.False(result.ShouldCorrect);
